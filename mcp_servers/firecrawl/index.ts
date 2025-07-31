@@ -15,8 +15,10 @@ import FirecrawlApp, {
 } from '@mendable/firecrawl-js';
 import PQueue from 'p-queue';
 import { AsyncLocalStorage } from 'async_hooks';
+import { validateAuthToken, CredentialValidator } from '../shared/validation.js';
 
 import dotenv from 'dotenv';
+import { validateAuthToken, CredentialValidator } from '../shared/validation.js';
 
 dotenv.config();
 
@@ -1484,7 +1486,24 @@ app.post('/mcp', async (req: Request, res: Response) => {
     const apiKey = process.env.FIRECRAWL_API_KEY || req.headers['x-auth-token'] as string;
 
     if (!apiKey && !FIRECRAWL_API_URL) {
-        console.error('Error: Firecrawl API key is missing. Provide it via FIRECRAWL_API_KEY env var or x-auth-token header.');
+        const errorMessage = 'Firecrawl API key is missing. Provide it via FIRECRAWL_API_KEY env var or x-auth-token header.';
+        console.error(`Error: ${errorMessage}`);
+        return res.status(401).json({
+            jsonrpc: '2.0',
+            error: {
+                code: -32001,
+                message: 'Authentication Error',
+                data: {
+                    type: 'authentication_error',
+                    details: errorMessage,
+                    troubleshooting: {
+                        setup_url: 'https://docs.firecrawl.dev/api-reference/introduction',
+                        required_vars: ['FIRECRAWL_API_KEY or x-auth-token header']
+                    }
+                }
+            },
+            id: null,
+        });
     }
 
     // Added: Instantiate client within request context

@@ -2,6 +2,7 @@ import os
 import logging
 import contextlib
 import json
+import sys
 from collections.abc import AsyncIterator
 from typing import Any, Dict, List, Optional
 
@@ -15,6 +16,16 @@ from starlette.applications import Starlette
 from starlette.responses import Response
 from starlette.routing import Mount, Route
 from starlette.types import Receive, Scope, Send
+
+# Import shared validation utilities
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from shared.validation import (
+    validate_startup_config,
+    EnvVarConfig,
+    ValidationLevel,
+    COMMON_ENV_VARS,
+    CredentialValidator
+)
 
 from tools import (
     linkedin_token_context,
@@ -30,8 +41,26 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("linkedin-mcp-server")
 
-LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN") or "" # for local use
-LINKEDIN_MCP_SERVER_PORT = int(os.getenv("LINKEDIN_MCP_SERVER_PORT", "5000"))
+# Define environment variable requirements
+LINKEDIN_ENV_VARS = {
+    "LINKEDIN_ACCESS_TOKEN": EnvVarConfig(
+        name="LINKEDIN_ACCESS_TOKEN",
+        description="LinkedIn access token for API authentication",
+        validation_level=ValidationLevel.REQUIRED,
+        setup_url="https://www.linkedin.com/developers/apps",
+        required_permissions=["r_liteprofile", "r_emailaddress", "w_member_social"]
+    ),
+    **COMMON_ENV_VARS
+}
+
+# Validate environment variables on startup
+try:
+    validated_vars = validate_startup_config("LinkedIn", LINKEDIN_ENV_VARS, logger)
+    LINKEDIN_ACCESS_TOKEN = validated_vars["LINKEDIN_ACCESS_TOKEN"]
+    LINKEDIN_MCP_SERVER_PORT = int(validated_vars.get("PORT", "5000"))
+except ValueError as e:
+    logger.error(f"Configuration error: {e}")
+    sys.exit(1)
 
 @click.command()
 @click.option("--port", default=LINKEDIN_MCP_SERVER_PORT, help="Port to listen on for HTTP")

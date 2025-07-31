@@ -2,6 +2,7 @@ import contextlib
 import logging
 import os
 import re
+import sys
 from collections.abc import AsyncIterator
 from typing import Any, Dict
 from urllib.parse import urlparse, parse_qs
@@ -22,23 +23,63 @@ import asyncio
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.proxies import WebshareProxyConfig
 
+# Import shared validation utilities
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from shared.validation import (
+    validate_startup_config, 
+    EnvVarConfig, 
+    ValidationLevel, 
+    COMMON_ENV_VARS
+)
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-# YouTube API constants and configuration
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
-if not YOUTUBE_API_KEY:
-    raise ValueError("YOUTUBE_API_KEY environment variable is required")
+# Define environment variable requirements
+YOUTUBE_ENV_VARS = {
+    "YOUTUBE_API_KEY": EnvVarConfig(
+        name="YOUTUBE_API_KEY",
+        description="YouTube Data API v3 key for accessing YouTube content",
+        validation_level=ValidationLevel.REQUIRED,
+        setup_url="https://console.developers.google.com/apis/credentials",
+        required_permissions=["YouTube Data API v3"]
+    ),
+    "WEBSHARE_PROXY_USERNAME": EnvVarConfig(
+        name="WEBSHARE_PROXY_USERNAME", 
+        description="Webshare proxy username (optional, for rate limiting protection)",
+        validation_level=ValidationLevel.CONDITIONAL,
+        depends_on="WEBSHARE_PROXY_PASSWORD"
+    ),
+    "WEBSHARE_PROXY_PASSWORD": EnvVarConfig(
+        name="WEBSHARE_PROXY_PASSWORD",
+        description="Webshare proxy password (optional, for rate limiting protection)", 
+        validation_level=ValidationLevel.CONDITIONAL,
+        depends_on="WEBSHARE_PROXY_USERNAME"
+    ),
+    "TRANSCRIPT_LANGUAGE": EnvVarConfig(
+        name="TRANSCRIPT_LANGUAGE",
+        description="Comma-separated list of preferred transcript languages",
+        validation_level=ValidationLevel.OPTIONAL,
+        default_value="en"
+    ),
+    **COMMON_ENV_VARS
+}
 
-# Proxy configuration
-WEBSHARE_PROXY_USERNAME = os.getenv("WEBSHARE_PROXY_USERNAME")
-WEBSHARE_PROXY_PASSWORD = os.getenv("WEBSHARE_PROXY_PASSWORD")
+# Validate environment variables on startup
+try:
+    validated_vars = validate_startup_config("YouTube", YOUTUBE_ENV_VARS, logger)
+    YOUTUBE_API_KEY = validated_vars["YOUTUBE_API_KEY"]
+    WEBSHARE_PROXY_USERNAME = validated_vars.get("WEBSHARE_PROXY_USERNAME")
+    WEBSHARE_PROXY_PASSWORD = validated_vars.get("WEBSHARE_PROXY_PASSWORD")
+    TRANSCRIPT_LANGUAGES = [lang.strip() for lang in validated_vars.get("TRANSCRIPT_LANGUAGE", "en").split(',')]
+    YOUTUBE_MCP_SERVER_PORT = int(validated_vars.get("PORT", "5000"))
+except ValueError as e:
+    logger.error(f"Configuration error: {e}")
+    sys.exit(1)
 
 YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
-YOUTUBE_MCP_SERVER_PORT = int(os.getenv("YOUTUBE_MCP_SERVER_PORT", "5000"))
-TRANSCRIPT_LANGUAGES = [lang.strip() for lang in os.getenv("TRANSCRIPT_LANGUAGE", "en").split(',')]
 
 # Initialize YouTube Transcript API with proxy if credentials are available
 if WEBSHARE_PROXY_USERNAME and WEBSHARE_PROXY_PASSWORD:

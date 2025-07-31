@@ -33,10 +33,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger("stripe-mcp-server")
 
-# Stripe API constants and configuration
-STRIPE_API_KEY = os.getenv("STRIPE_API_KEY")
-if not STRIPE_API_KEY:
-    raise ValueError("STRIPE_API_KEY environment variable is required")
+# Import shared validation utilities
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from shared.validation import (
+    validate_startup_config,
+    EnvVarConfig,
+    ValidationLevel,
+    COMMON_ENV_VARS
+)
+
+# Define environment variable requirements
+STRIPE_ENV_VARS = {
+    "STRIPE_API_KEY": EnvVarConfig(
+        name="STRIPE_API_KEY",
+        description="Stripe API key for accessing Stripe services",
+        validation_level=ValidationLevel.REQUIRED,
+        setup_url="https://dashboard.stripe.com/apikeys",
+        required_permissions=["Read/Write access to Stripe API"]
+    ),
+    **COMMON_ENV_VARS
+}
+
+# Validate environment variables on startup
+try:
+    validated_vars = validate_startup_config("Stripe", STRIPE_ENV_VARS, logger)
+    STRIPE_API_KEY = validated_vars["STRIPE_API_KEY"]
+except ValueError as e:
+    logger.error(f"Configuration error: {e}")
+    sys.exit(1)
 
 STRIPE_MCP_SERVER_PORT = int(os.getenv("STRIPE_MCP_SERVER_PORT", "5002"))
 
